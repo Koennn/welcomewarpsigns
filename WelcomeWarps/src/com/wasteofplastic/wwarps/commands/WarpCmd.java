@@ -16,14 +16,10 @@
  *******************************************************************************/
 package com.wasteofplastic.wwarps.commands;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.UUID;
-
+import com.earth2me.essentials.Essentials;
+import com.wasteofplastic.wwarps.Settings;
+import com.wasteofplastic.wwarps.WWarps;
+import com.wasteofplastic.wwarps.util.Util;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -36,17 +32,19 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.event.player.PlayerTeleportEvent;
 
-import com.wasteofplastic.wwarps.Settings;
-import com.wasteofplastic.wwarps.WWarps;
-import com.wasteofplastic.wwarps.util.Util;
+import java.util.*;
+import java.util.Map.Entry;
 
 public class WarpCmd implements CommandExecutor, TabCompleter {
+
     private WWarps plugin;
     private Sound batTakeOff;
+
     /**
      * Constructor
-     * 
+     *
      * @param aSkyBlock
      * @param players
      */
@@ -54,7 +52,7 @@ public class WarpCmd implements CommandExecutor, TabCompleter {
         // Plugin instance
         this.plugin = aSkyBlock;
         // Get the sounds
-        for (Sound sound: Sound.values()) {
+        for (Sound sound : Sound.values()) {
             if (sound.toString().contains("TAKEOFF")) {
                 batTakeOff = sound;
             }
@@ -63,7 +61,7 @@ public class WarpCmd implements CommandExecutor, TabCompleter {
 
     /**
      * One-to-one relationship, you can return the first matched key
-     * 
+     *
      * @param map
      * @param value
      * @return
@@ -149,92 +147,93 @@ public class WarpCmd implements CommandExecutor, TabCompleter {
         }
         if (label.equalsIgnoreCase("wwarp")) {
             switch (split.length) {
-            case 1:
-                // Warp somewhere command
-                if (!player.hasPermission(Settings.PERMPREFIX + "use")) {
-                    player.sendMessage(ChatColor.RED + plugin.myLocale().errorNoPermission);
-                    return true;
-                }
-                final Set<UUID> warpList = plugin.getWarpSignsListener().listWarps();
-                if (warpList.isEmpty()) {
-                    player.sendMessage(ChatColor.YELLOW + plugin.myLocale().warpserrorNoWarpsYet);
-                    if (player.hasPermission(Settings.PERMPREFIX + "add")) {
-                        player.sendMessage(ChatColor.YELLOW + plugin.myLocale().warpswarpTip);
-                    } else {
+                case 1:
+                    // Warp somewhere command
+                    if (!player.hasPermission(Settings.PERMPREFIX + "use")) {
                         player.sendMessage(ChatColor.RED + plugin.myLocale().errorNoPermission);
+                        return true;
                     }
-                    return true;
-                } else {
-                    // Check if this is part of a name
-                    UUID foundWarp = null;
-                    for (UUID warp : warpList) {
-                        if (plugin.getServer().getOfflinePlayer(warp).getName().toLowerCase().startsWith(split[0].toLowerCase())) {
-                            foundWarp = warp;
-                            break;
+                    final Set<UUID> warpList = plugin.getWarpSignsListener().listWarps();
+                    if (warpList.isEmpty()) {
+                        player.sendMessage(ChatColor.YELLOW + plugin.myLocale().warpserrorNoWarpsYet);
+                        if (player.hasPermission(Settings.PERMPREFIX + "add")) {
+                            player.sendMessage(ChatColor.YELLOW + plugin.myLocale().warpswarpTip);
+                        } else {
+                            player.sendMessage(ChatColor.RED + plugin.myLocale().errorNoPermission);
                         }
-                    }
-                    if (foundWarp == null) {
-                        player.sendMessage(ChatColor.RED + plugin.myLocale().warpserrorDoesNotExist);
                         return true;
                     } else {
-                        // Warp exists!
-                        final Location warpSpot = plugin.getWarpSignsListener().getWarp(foundWarp);
-                        // Check if the warp spot is safe
-                        if (warpSpot == null) {
-                            player.sendMessage(ChatColor.RED + plugin.myLocale().warpserrorNotReadyYet);
-                            plugin.getLogger().warning("Null warp found, owned by " + plugin.getServer().getOfflinePlayer(foundWarp).getName());
-                            return true;
-                        }
-                        // Find out which direction the warp is facing
-                        Block b = warpSpot.getBlock();
-                        if (b.getType().equals(Material.SIGN_POST) || b.getType().equals(Material.WALL_SIGN)) {
-                            Sign sign = (Sign) b.getState();
-                            org.bukkit.material.Sign s = (org.bukkit.material.Sign) sign.getData();
-                            BlockFace directionFacing = s.getFacing();
-                            Location inFront = b.getRelative(directionFacing).getLocation();
-                            Location oneDown = b.getRelative(directionFacing).getRelative(BlockFace.DOWN).getLocation();
-                            if ((WWarps.isSafeLocation(inFront))) {
-                                warpPlayer(player, inFront, foundWarp, directionFacing);
-                                return true;
-                            } else if (b.getType().equals(Material.WALL_SIGN) && WWarps.isSafeLocation(oneDown)) {
-                                // Try one block down if this is a wall sign
-                                warpPlayer(player, oneDown, foundWarp, directionFacing);
-                                return true;
+                        // Check if this is part of a name
+                        UUID foundWarp = null;
+                        for (UUID warp : warpList) {
+                            if (plugin.getServer().getOfflinePlayer(warp).getName().toLowerCase().startsWith(split[0].toLowerCase())) {
+                                foundWarp = warp;
+                                break;
                             }
-                        } else {
-                            // Warp has been removed
+                        }
+                        if (foundWarp == null) {
                             player.sendMessage(ChatColor.RED + plugin.myLocale().warpserrorDoesNotExist);
-                            plugin.getWarpSignsListener().removeWarp(warpSpot);
-                            return true;
-                        }
-                        if (!(WWarps.isSafeLocation(warpSpot))) {
-                            player.sendMessage(ChatColor.RED + plugin.myLocale().warpserrorNotSafe);
-                            // WALL_SIGN's will always be unsafe if the place in front is obscured.
-                            if (b.getType().equals(Material.SIGN_POST)) {
-                                plugin.getLogger().warning(
-                                        "Unsafe warp found at " + warpSpot.toString() + " owned by " + plugin.getServer().getOfflinePlayer(foundWarp).getName());
-                            }
                             return true;
                         } else {
-                            final Location actualWarp = new Location(warpSpot.getWorld(), warpSpot.getBlockX() + 0.5D, warpSpot.getBlockY(),
-                                    warpSpot.getBlockZ() + 0.5D);
-                            player.teleport(actualWarp);			    
-                            player.getWorld().playSound(player.getLocation(), batTakeOff, 1F, 1F);
-                            return true;
+                            // Warp exists!
+                            final Location warpSpot = plugin.getWarpSignsListener().getWarp(foundWarp);
+                            // Check if the warp spot is safe
+                            if (warpSpot == null) {
+                                player.sendMessage(ChatColor.RED + plugin.myLocale().warpserrorNotReadyYet);
+                                plugin.getLogger().warning("Null warp found, owned by " + plugin.getServer().getOfflinePlayer(foundWarp).getName());
+                                return true;
+                            }
+                            // Find out which direction the warp is facing
+                            Block b = warpSpot.getBlock();
+                            if (b.getType().equals(Material.SIGN_POST) || b.getType().equals(Material.WALL_SIGN)) {
+                                Sign sign = (Sign) b.getState();
+                                org.bukkit.material.Sign s = (org.bukkit.material.Sign) sign.getData();
+                                BlockFace directionFacing = s.getFacing();
+                                Location inFront = b.getRelative(directionFacing).getLocation();
+                                Location oneDown = b.getRelative(directionFacing).getRelative(BlockFace.DOWN).getLocation();
+                                if ((WWarps.isSafeLocation(inFront))) {
+                                    warpPlayer(player, inFront, foundWarp, directionFacing);
+                                    return true;
+                                } else if (b.getType().equals(Material.WALL_SIGN) && WWarps.isSafeLocation(oneDown)) {
+                                    // Try one block down if this is a wall sign
+                                    warpPlayer(player, oneDown, foundWarp, directionFacing);
+                                    return true;
+                                }
+                            } else {
+                                // Warp has been removed
+                                player.sendMessage(ChatColor.RED + plugin.myLocale().warpserrorDoesNotExist);
+                                plugin.getWarpSignsListener().removeWarp(warpSpot);
+                                return true;
+                            }
+                            if (!(WWarps.isSafeLocation(warpSpot))) {
+                                player.sendMessage(ChatColor.RED + plugin.myLocale().warpserrorNotSafe);
+                                // WALL_SIGN's will always be unsafe if the place in front is obscured.
+                                if (b.getType().equals(Material.SIGN_POST)) {
+                                    plugin.getLogger().warning(
+                                            "Unsafe warp found at " + warpSpot.toString() + " owned by " + plugin.getServer().getOfflinePlayer(foundWarp).getName());
+                                }
+                                return true;
+                            } else {
+                                final Location actualWarp = new Location(warpSpot.getWorld(), warpSpot.getBlockX() + 0.5D, warpSpot.getBlockY(),
+                                        warpSpot.getBlockZ() + 0.5D);
+                                player.teleport(actualWarp);
+                                player.getWorld().playSound(player.getLocation(), batTakeOff, 1F, 1F);
+                                return true;
+                            }
                         }
                     }
-                }
-            default:
-                player.performCommand("wwarps");
-                return true;
-            } 
-        } 
+                default:
+                    player.performCommand("wwarps");
+                    return true;
+            }
+        }
         return false;
     }
 
 
     /**
      * Warps a player to a spot in front of a sign
+     *
      * @param player
      * @param inFront
      * @param foundWarp
@@ -245,8 +244,14 @@ public class WarpCmd implements CommandExecutor, TabCompleter {
         float yaw = Util.blockFaceToFloat(directionFacing);
         final Location actualWarp = new Location(inFront.getWorld(), inFront.getBlockX() + 0.5D, inFront.getBlockY(),
                 inFront.getBlockZ() + 0.5D, yaw, 30F);
-        player.teleport(actualWarp);
-        player.getWorld().playSound(player.getLocation(), batTakeOff, 1F, 1F);
+
+        Essentials ess = (Essentials) WWarps.getPlugin().getServer().getPluginManager().getPlugin("Essentials");
+        try {
+            ess.getUser(player).getTeleport().teleport(actualWarp, null, PlayerTeleportEvent.TeleportCause.PLUGIN);
+        } catch (Exception e) {
+            player.sendMessage(ChatColor.RED + "Destination obstructed!");
+        }
+
         Player warpOwner = plugin.getServer().getPlayer(foundWarp);
         if (warpOwner != null && !warpOwner.equals(player)) {
             warpOwner.sendMessage(plugin.myLocale().warpsPlayerWarped.replace("[name]", player.getDisplayName()));
@@ -272,16 +277,16 @@ public class WarpCmd implements CommandExecutor, TabCompleter {
         String lastArg = (args.length != 0 ? args[args.length - 1] : "");
         //plugin.getLogger().info("DEBUG: args length = " + args.length);
         switch (args.length) {
-        case 1: 
-            final Set<UUID> warpList = plugin.getWarpSignsListener().listWarps();
-            //plugin.getLogger().info("DEBUG: warp list = " + warpList);
-            for (UUID warp : warpList) {
-                //plugin.getLogger().info("DEBUG: adding " + plugin.getServer().getOfflinePlayer(warp).getName());
-                options.add(plugin.getServer().getOfflinePlayer(warp).getName());
-            }
-            break;
-        default:
-            break;
+            case 1:
+                final Set<UUID> warpList = plugin.getWarpSignsListener().listWarps();
+                //plugin.getLogger().info("DEBUG: warp list = " + warpList);
+                for (UUID warp : warpList) {
+                    //plugin.getLogger().info("DEBUG: adding " + plugin.getServer().getOfflinePlayer(warp).getName());
+                    options.add(plugin.getServer().getOfflinePlayer(warp).getName());
+                }
+                break;
+            default:
+                break;
         }
         return Util.tabLimit(options, lastArg);
     }

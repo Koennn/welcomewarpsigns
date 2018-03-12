@@ -1,8 +1,9 @@
 name: WelcomeWarpSigns
 main: com.wasteofplastic.wwarps.WWarps
-version: ${version}
+version: 1.3-FORKsto
 description: Easy to use warp signs for players
 author: tastybento
+depend: [Essentials]
 commands:
     wwarp:
        description: Show Welcome Warp Signs
